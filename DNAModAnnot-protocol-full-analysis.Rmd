@@ -1,0 +1,620 @@
+---
+title: "DNAModAnnot: Protocol full analysis example"
+author: "Alexis Hardy"
+date: 2022-01-01
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{DNAModAnnot_Protocol_full_analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+<style>
+div.blue {  border-left: 5px solid blue; padding: 10px}
+</style>
+
+to do
+
+
+```{r}
+library(DNAModAnnot)
+
+# Loading genome assembly (fasta file or DNAStringSet)
+organism_genome_fa <- "../T_thermophila_June2014_assembly.fasta"
+organism_genome <- Biostrings::readDNAStringSet(organism_genome_fa)
+names(organism_genome) <- gsub(x = names(organism_genome), 
+                               pattern = " .*", replacement = "")
+organism_genome_range <- GetGenomeGRanges(organism_genome)
+```
+
+to do
+
+```{r}
+# Statistics summary of genome
+report_assembly <- GetAssemblyReport(
+  dnastringsetGenome = organism_genome,
+  cOrgAssemblyName = "T.thermophila_June2014 (sampled)"
+)
+```
+
+to do
+
+```{r plot1, fig.width = 7, fig.asp = .62, fig.align = "center"}
+# Cumulative length of genome assembly
+contig_cumulative_length <- GetContigCumulLength(organism_genome)
+DrawContigCumulLength(
+  nContigCumsumLength = contig_cumulative_length$cumsum_Mbp_length,
+  cOrgAssemblyName = "T.thermophila_June2014 (sampled)",
+  lGridInBackground = TRUE
+)
+```
+
+to do
+
+```{r}
+#We only retrieve the 200 largest contigs and then we filter the organism_genome
+# and organism_genome_range object
+contigsToKeep <- contig_cumulative_length$contig_names[
+  c( round(seq(25,300, length.out = 30)), 
+   round(seq(400,700, length.out = 20)) )
+]
+
+organism_genome <- organism_genome[names(organism_genome) %in% contigsToKeep]
+organism_genome_range <- organism_genome_range[
+  as.character(GenomicRanges::seqnames(organism_genome_range)) %in% contigsToKeep
+  ]
+```
+
+
+
+to do
+
+```{r warning=FALSE, results="hide"}
+# loading SMRT-seq data (PacBio gff and csv files)
+PacBioGFF_path <- "./TthermophilaSMRTDATA_6mA.subsetRandom.gff"
+PacBioGFF_granges <- ImportPacBioGFF(
+  cPacBioGFFPath = PacBioGFF_path,
+  cNameModToExtract = "m6A",
+  cModNameInOutput = "6mA",
+  cContigToBeAnalyzed = names(organism_genome)
+)
+PacBioCSV_path <- "./TthermophilaSMRTDATA_6mA.subsetRandom.csv"
+PacBioCSV_gpos <- ImportPacBioCSV(
+  cPacBioCSVPath = PacBioCSV_path,
+  cSelectColumnsToExtract = c(
+    "refName", "tpl", "strand",
+    "base", "score",
+    "ipdRatio", "coverage"
+  ),
+  lKeepExtraColumnsInGPos = TRUE,
+  lSortGPos = TRUE,
+  cContigToBeAnalyzed = names(organism_genome)
+)
+```
+
+to do
+
+
+```{r barplotfig1, fig.width = 7, fig.asp = .62, fig.align = "center"}
+# Percentage of sequencing by scaffold and by strand
+contig_percentage_sequencing <- GetSeqPctByContig(PacBioCSV_gpos,
+  grangesGenome = organism_genome_range
+)
+DrawBarplotBothStrands(
+  nParamByContigForward = contig_percentage_sequencing$f_strand$seqPct,
+  nParamByContigReverse = contig_percentage_sequencing$r_strand$seqPct,
+  cContigNames = contig_percentage_sequencing$f_strand$refName,
+  cGraphName = "Percentage of sequencing per contig"
+)
+```
+
+to do
+
+```{r barplotfig2, fig.width = 7, fig.asp = .62, fig.align = "center"}
+# Mean coverage by scaffold and by strand
+contig_mean_coverage <- GetMeanParamByContig(
+  grangesData = PacBioCSV_gpos,
+  dnastringsetGenome = organism_genome,
+  cParamName = "coverage"
+)
+DrawBarplotBothStrands(
+  nParamByContigForward = contig_mean_coverage$f_strand$mean_coverage,
+  nParamByContigReverse = contig_mean_coverage$r_strand$mean_coverage,
+  cContigNames = contig_mean_coverage$f_strand$refName,
+  cGraphName = "Mean Coverage per contig"
+)
+```
+
+to do
+
+```{r histfig, fig.width = 10, fig.asp = .62, fig.align = "center"}
+# coverage distribution of all bases sequenced
+DrawDistriHistBox(PacBioCSV_gpos$coverage,
+  cGraphName = "Coverage distribution of all bases sequenced",
+  cParamName = "Coverage",
+  lTrimOutliers = FALSE
+)
+```
+
+to do
+
+```{r}
+# First filter: contigs
+PacBio_filtered_data <- FiltPacBio(
+  gposPacBioCSV = PacBioCSV_gpos,
+  grangesPacBioGFF = PacBioGFF_granges,
+  cContigToBeRemoved = NULL,
+  dnastringsetGenome = organism_genome,
+  nContigMinSize = 1000,
+  listPctSeqByContig = contig_percentage_sequencing,
+  nContigMinPctOfSeq = 95,
+  listMeanCovByContig = contig_mean_coverage,
+  nContigMinCoverage = 10
+)
+PacBioCSV_gpos_filt1 <- PacBio_filtered_data$csv
+PacBioGFF_granges_filt1 <- PacBio_filtered_data$gff
+```
+
+to do
+
+```{r warning=FALSE, results="hide"}
+# report basic Mod for remaining scaffolds
+report_modifications <- GetModReportPacBio(
+  grangesGenome = organism_genome_range,
+  grangesPacBioGFF = PacBioGFF_granges_filt1,
+  gposPacBioCSV = PacBioCSV_gpos_filt1,
+  cOrgAssemblyName = "T.thermophila_June2014 (sampled)",
+  dnastringsetGenome = organism_genome,
+  cBaseLetterForMod = "A",
+  cModNameInOutput = "6mA"
+)
+```
+
+to do
+
+```{r barplotfig3, fig.width = 7, fig.asp = .62, fig.align = "center"}
+# Modif ratio by scaffold and by strand
+contig_modification_ratio <- GetModRatioByContig(PacBioGFF_granges_filt1,
+  PacBioCSV_gpos_filt1[PacBioCSV_gpos_filt1$base == "A"],
+  dnastringsetGenome = organism_genome,
+  cBaseLetterForMod = "A"
+)
+contig_modification_ratio$f_strand$Mod_ratio[is.na(contig_modification_ratio$f_strand$Mod_ratio)] <- 0
+contig_modification_ratio$r_strand$Mod_ratio[is.na(contig_modification_ratio$r_strand$Mod_ratio)] <- 0
+
+DrawBarplotBothStrands(
+  nParamByContigForward = contig_modification_ratio$f_strand$Mod_ratio,
+  nParamByContigReverse = contig_modification_ratio$r_strand$Mod_ratio,
+  cContigNames = contig_modification_ratio$f_strand$refName,
+  cGraphName = "Modif/Base ratio per contig (Sequenced sites only)"
+)
+```
+
+to do
+
+```{r logofig, fig.width = 5, fig.asp = .62, fig.align = "center", warning=FALSE, results="hide"}
+# Sequence logo associated to Modif detected
+PacBioGFF_granges_with_sequence <- GetGRangesWindowSeqandParam(PacBioGFF_granges_filt1,
+  organism_genome_range,
+  dnastringsetGenome = organism_genome,
+  nUpstreamBpToAdd = 5,
+  nDownstreamBpToAdd = 5
+)
+
+backgroundACGT = c(
+  (100-report_assembly["gc_pct",])/2,
+  report_assembly["gc_pct",]/2,
+  report_assembly["gc_pct",]/2,
+  (100-report_assembly["gc_pct",])/2
+)/100
+
+DrawModLogo(
+  dnastringsetSeqAroundMod = as(PacBioGFF_granges_with_sequence$sequence, "DNAStringSet"),
+  nGenomicBgACGT = backgroundACGT, cYunit = "ic_hide_bg",
+  nPositionsToAnnotate = c(6), cAnnotationText = c("6mA"), nTagTextFontSize = 12
+)
+```
+
+
+to do
+
+
+```{r}
+# Second filter: fraction
+PacBioGFF_granges_filt2 <- FiltPacBio(
+  grangesPacBioGFF = PacBioGFF_granges_filt1,
+  cParamNameForFilter = "frac",
+  nFiltParamLoBoundaries = 0.05, nFiltParamUpBoundaries = 1,
+  cFiltParamBoundariesToInclude = "upperOnly"
+)$gff
+```
+
+to do
+
+```{r warning=FALSE, results="hide"}
+# Extract Mod Data by motif over-represented (at least % of motifs)
+motif_pct_and_PacBioGFF_grangeslist <- ExtractListModPosByModMotif(
+  grangesModPos = PacBioGFF_granges_filt2,
+  grangesGenome = organism_genome_range,
+  dnastringsetGenome = organism_genome,
+  nUpstreamBpToAdd = 0, nDownstreamBpToAdd = 1,
+  nModMotifMinProp = 0.05,
+  cBaseLetterForMod = "A",
+  cModNameInOutput = "6mA"
+)
+```
+
+to do
+
+```{r fdrplotfig, fig.width = 10, fig.asp = .62, fig.align = "center", warning=FALSE, results="hide"}
+# Motif FDR estimation for each motif over-represented (at least % of motifs)
+BaseCSV_granges_filt1 <- as(PacBioCSV_gpos_filt1[PacBioCSV_gpos_filt1$base == "A"], "GRanges")
+BaseCSV_granges_with_sequence <- GetGRangesWindowSeqandParam(
+  grangesData = BaseCSV_granges_filt1,
+  grangesGenome = organism_genome_range,
+  dnastringsetGenome = organism_genome,
+  nUpstreamBpToAdd = 0,
+  nDownstreamBpToAdd = 1
+)
+score_fdr_by_motif_list <- GetFdrEstListByThresh(
+  grangesDataWithSeq = BaseCSV_granges_with_sequence,
+  grangesDataWithSeqControl = NULL,
+  cNameParamToTest = "score",
+  nRoundDigits = 1,
+  cModMotifsAsForeground = motif_pct_and_PacBioGFF_grangeslist$motifs_to_analyse
+)
+score_fdr_by_motif_limit <- GetFdrBasedThreshLimit(score_fdr_by_motif_list,
+  nFdrPropForFilt = 0.05,
+  lUseBestThrIfNoFdrThr = TRUE
+)
+DrawFdrEstList(
+  listFdrEstByThr = score_fdr_by_motif_list,
+  cNameParamToTest = "score",
+  nFdrPropForFilt = 0.05
+)
+```
+
+```{r}
+PacBioGFF_grangeslist_filt <- FiltPacBio(
+  grangesPacBioGFF = motif_pct_and_PacBioGFF_grangeslist$GRangesbyMotif,
+  listFdrEstByThrIpdRatio = NULL,
+  listFdrEstByThrScore = score_fdr_by_motif_limit
+)$gff
+```
+
+
+to do
+
+```{r}
+# Select one motif for the analysis by motif
+motifs_base <- motif_pct_and_PacBioGFF_grangeslist$motifs_to_analyse[motif_pct_and_PacBioGFF_grangeslist$motifs_to_analyse == "AT"]
+motifs_modifications <- motif_pct_and_PacBioGFF_grangeslist$mod_motif[motifs_base == motif_pct_and_PacBioGFF_grangeslist$motifs_to_analyse]
+PacBioGFF_granges_filtAT <- PacBioGFF_grangeslist_filt[[motifs_base]]
+BaseCSV_granges_filtAT <- BaseCSV_granges_with_sequence[BaseCSV_granges_with_sequence$sequence == motifs_base, ]
+```
+
+to do
+
+```{r}
+# Loading GFF annotation file (Minimum annotation required: gene (seqnames, start, end, strand))
+annotations_path <- "./T_thermophila_June2014.gff3"
+annotations_range <- rtracklayer::readGFFAsGRanges(annotations_path)
+annotations_range <- PredictMissingAnnotation(
+  grangesAnnotations = annotations_range,
+  grangesGenome = organism_genome_range,
+  cFeaturesColName = "type",
+  cGeneCategories = c("gene"),
+  lAddIntronRangesUsingExon = TRUE
+)
+```
+
+to do
+
+```{r annbyffig, fig.width = 8, fig.asp = .62, fig.align = "center"}
+# Mod annotation by feature
+annotations_range_ModBase_counts <- GetModBaseCountsByFeature(
+  grangesAnnotations = annotations_range,
+  grangesModPos = PacBioGFF_granges_filtAT,
+  gposModTargetBasePos = BaseCSV_granges_filtAT,
+  lIgnoreStrand = FALSE
+)
+DrawModBasePropByFeature(
+  grangesAnnotationsWithCounts = annotations_range_ModBase_counts,
+  cFeaturesToCompare = c("gene", "intergenic"),
+  lUseCountsPerkbp = TRUE,
+  cBaseMotif = motifs_base,
+  cModMotif = motifs_modifications
+)
+```
+to do
+
+```{r}
+# Loading additional Data: RNA-seq dataset
+expression_file_path <- "./GSM692081_Growth.map.txt"
+expression_dataframe <- read.table(
+  file = expression_file_path,
+  header = TRUE, sep = "\t"
+)
+```
+
+to do
+
+```{r}
+# merge RNA-seq data with Annotation GRanges object
+genes_range_ModBase_counts_param <- annotations_range_ModBase_counts[annotations_range_ModBase_counts$type == "gene"]
+genes_range_ModBase_counts_param <- genes_range_ModBase_counts_param[
+  genes_range_ModBase_counts_param$Name %in% expression_dataframe$Gene_ID
+]
+GenomicRanges::mcols(genes_range_ModBase_counts_param) <- merge(
+  x = GenomicRanges::mcols(genes_range_ModBase_counts_param),
+  by.x = "Name",
+  y = expression_dataframe,
+  by.y = "Gene_ID"
+)
+```
+
+to do
+
+```{r annQfig, fig.width = 9, fig.asp = .62, fig.align = "center"}
+# Comparison of quantitative parameter with Mod annotation
+DrawParamPerModBaseCategories(
+  grangesAnnotationsWithCounts = genes_range_ModBase_counts_param,
+  cParamColname = "Number_of_mapped_reads",
+  cParamFullName = "Gene expression at G-m (mid-log exponential growth)",
+  cParamYLabel = "RNA-seq read counts (G-m)",
+  cSelectFeature = "gene",
+  lUseCountsPerkbp = TRUE,
+  cBaseMotif = motifs_base,
+  cModMotif = motifs_modifications,
+  lBoxPropToCount = FALSE, lUseSameYAxis = TRUE
+)
+DrawParamPerModBaseCategories(
+  grangesAnnotationsWithCounts = genes_range_ModBase_counts_param,
+  cParamColname = "Number_of_mapped_reads",
+  cParamFullName = "Gene expression at G-m (mid-log exponential growth)",
+  cParamYLabel = "RNA-seq read counts (G-m)",
+  cSelectFeature = "gene",
+  lUseCountsPerkbp = FALSE,
+  cBaseMotif = motifs_base,
+  cModMotif = motifs_modifications,
+  lBoxPropToCount = FALSE, lUseSameYAxis = TRUE
+)
+```
+
+to do
+
+```{r annwithinffig, fig.width = 8, fig.asp = .62, fig.align = "center"}
+# Mod annotation within feature
+gene_annotation_range <- annotations_range[annotations_range$type == "gene", ]
+gene_annotation_range <- GetModBaseCountsWithinFeature(
+  grangesAnnotations = gene_annotation_range,
+  grangesModPos = PacBioGFF_granges_filtAT,
+  gposModTargetBasePos = BaseCSV_granges_filtAT,
+  lIgnoreStrand = FALSE,
+  nWindowsNb = 20
+)
+DrawModBaseCountsWithinFeature(
+  grangesAnnotationsWithCountsByWindow = gene_annotation_range,
+  cFeatureName = "gene",
+  cBaseMotif = motifs_base,
+  cModMotif = motifs_modifications
+)
+```
+
+to do
+
+
+```{r anndistfig, fig.width = 10, fig.asp = 1, warning=FALSE, results="hide"}
+# ModBase distance from feature/feature limit
+Mod_distance_feature_countslist <- GetDistFromFeaturePos(
+  grangesAnnotations = annotations_range,
+  cSelectFeature = "gene",
+  grangesData = PacBioGFF_granges_filtAT,
+  lGetGRangesInsteadOfListCounts = FALSE,
+  lGetPropInsteadOfCounts = TRUE,
+  cWhichStrandVsFeaturePos = "both", nWindowSizeAroundFeaturePos = 600,
+  lAddCorrectedDistFrom5pTo3p = TRUE,
+  cFeaturePosNames = c("TSS", "TTS")
+)
+Base_distance_feature_countslist <- GetDistFromFeaturePos(
+  grangesAnnotations = annotations_range,
+  cSelectFeature = "gene",
+  grangesData = BaseCSV_granges_filtAT,
+  lGetGRangesInsteadOfListCounts = FALSE,
+  lGetPropInsteadOfCounts = TRUE,
+  cWhichStrandVsFeaturePos = "both", nWindowSizeAroundFeaturePos = 600,
+  lAddCorrectedDistFrom5pTo3p = TRUE,
+  cFeaturePosNames = c("TSS", "TTS")
+)
+DrawModBasePropDistFromFeature(
+  listModCountsDistDataframe = Mod_distance_feature_countslist,
+  listBaseCountsDistDataframe = Base_distance_feature_countslist,
+  cFeaturePosNames = c("TSS", "TTS"),
+  cBaseMotif = motifs_base,
+  cModMotif = motifs_modifications
+)
+
+# ModBase and MNase-seq/ChIP-seq Reads center (from Bed file) distance from feature/feature limit
+bedfile_path <- "./GSM2534785_SB210_MNase.120_260.unique.bed"
+bedfile_object <- rtracklayer::import.bed(bedfile_path)
+
+bedfile_object <- GetGposCenterFromGRanges(grangesData = bedfile_object)
+bedfile_distance_feature_countslist <- GetDistFromFeaturePos(
+  grangesAnnotations = annotations_range,
+  cSelectFeature = "gene",
+  grangesData = bedfile_object,
+  lGetGRangesInsteadOfListCounts = FALSE,
+  lGetPropInsteadOfCounts = FALSE,
+  cWhichStrandVsFeaturePos = "both", nWindowSizeAroundFeaturePos = 600,
+  lAddCorrectedDistFrom5pTo3p = TRUE,
+  cFeaturePosNames = c("TSS", "TTS")
+)
+AddToModBasePropDistFromFeaturePlot(
+  dPosCountsDistFeatureStart = bedfile_distance_feature_countslist[[1]],
+  dPosCountsDistFeatureEnd = bedfile_distance_feature_countslist[[2]],
+  cSubtitleContent = "Along with nucleosome center distance",
+  cParamYLabel = "MNase-seq read center count",
+  cParamColor = "cyan3",
+  lAddAxisOnLeftSide = TRUE, cParamLty = 1, cParamLwd = 2
+)
+
+
+
+# ModBase and MNase-seq/ChIP-seq Reads center (from Bed file) distance from feature/feature limit
+bedfile2_path <- "./GSM2534783_WT_H2A.Z_ChIP.120_260.unique.bed"
+bedfile2_object <- rtracklayer::import.bed(bedfile2_path)
+
+bedfile2_object <- GetGposCenterFromGRanges(grangesData = bedfile2_object)
+bedfile2_distance_feature_countslist <- GetDistFromFeaturePos(
+  grangesAnnotations = annotations_range,
+  cSelectFeature = "gene",
+  grangesData = bedfile2_object,
+  lGetGRangesInsteadOfListCounts = FALSE,
+  lGetPropInsteadOfCounts = FALSE,
+  cWhichStrandVsFeaturePos = "both", nWindowSizeAroundFeaturePos = 600,
+  lAddCorrectedDistFrom5pTo3p = TRUE,
+  cFeaturePosNames = c("TSS", "TTS")
+)
+AddToModBasePropDistFromFeaturePlot(
+  dPosCountsDistFeatureStart = bedfile2_distance_feature_countslist[[1]],
+  dPosCountsDistFeatureEnd = bedfile2_distance_feature_countslist[[2]],
+  cSubtitleContent = "and with H2A.X ChIP-seq reads center distance",
+  cParamYLabel = "H2A.Z ChIP-seq reads center count",
+  cParamColor = "darkolivegreen2",
+  lAddAxisOnLeftSide = FALSE, cParamLty = 2, cParamLwd = 2
+)
+
+
+```
+
+
+to do
+
+```{r}
+cContigToViz <- unique(GenomicRanges::seqnames(organism_genome_range))
+
+# Generating Ideogram TRACK--------
+options(ucscChromosomeNames = FALSE)
+trackIdeogram <- AdaptedIdeogramTrackWithoutBandsData(
+  grangesGenome = organism_genome_range,
+  cContigToViz = cContigToViz,
+  cOrgAssemblyName = "T.thermophila_June2014"
+)
+```
+
+to do
+
+```{r}
+# Generating classic Gviz tracks
+
+# GenomeAxis TRACK------
+trackGenomeAxis <- Gviz::GenomeAxisTrack(cex = 1)
+
+# Sequence TRACK--------
+trackSequence <- Gviz::SequenceTrack(organism_genome_fa,
+  chromosome = cContigToViz,
+  add53 = TRUE,
+  complement = FALSE, cex = 0.8
+)
+
+# DATATRACK--------
+AT_6mA_ranges <- PacBioGFF_granges_filtAT[,4]
+GenomicRanges::strand(AT_6mA_ranges) <- "*"
+trackData6mATipdRatio <- Gviz::DataTrack(AT_6mA_ranges,
+  name = "6mAT\nipdRatio", type = "histogram",
+  col.histogram = c("red"), fill = "red",
+  background.title = "darkred", col = NULL
+)
+
+# pairs <- findOverlapPairs(coverageBed+1000, AT_6mA_ranges, ignore.strand = TRUE)
+# ans <- pintersect(pairs, ignore.strand = TRUE)
+# ans[order(ans$count, decreasing=TRUE)]
+
+coverageBed <- GenomicRanges::GRanges(
+  GenomicRanges::coverage(as(bedfile_object,"GRanges")))
+colnames(GenomicRanges::mcols(coverageBed)) <- "count"
+trackDataNuclCoverage <- Gviz::DataTrack(coverageBed, 
+                           type="histogram",
+                           name = "MNase-seq read \ncoverage",
+  col.histogram = c("blue"), fill = "blue",
+  background.title = "darkblue", col = NULL)
+
+
+coverageBed2 <- GenomicRanges::GRanges(
+  GenomicRanges::coverage(as(bedfile2_object,"GRanges")))
+colnames(GenomicRanges::mcols(coverageBed2)) <- "count"
+trackDataH2AXCoverage <- Gviz::DataTrack(coverageBed2, 
+                           type="histogram",
+                           name = "H2A.Z ChIP-seq reads \ncoverage",
+  col.histogram = c("green"), fill = "green",
+  background.title = "darkgreen", col = NULL)
+
+
+
+```
+
+
+to do
+
+
+```{r}
+# Generating Annotation TRACK with streaming--------
+gene_ranges <- annotations_range[annotations_range$type == "gene","Name"]
+gene_ranges$id <- gene_ranges$Name
+trackAnnotation <- Gviz::AnnotationTrack(gene_ranges,
+  name = "Gene", stacking = "squish",
+  groupAnnotation = "id",
+  just.group = "below",
+  fontcolor.group = "black", fontsize.group = 18,
+  fill = "lightblue", shape = "fixedArrow",
+  arrowHeadWidth = 50, lwd = 3,
+  background.title = "darkblue"
+)
+```
+
+
+to do
+
+
+```{r annlocalfig, fig.width=7, fig.height = 8, warning=FALSE, results="hide"}
+# Plotting Tracks--------
+Gviz::plotTracks(
+  trackList = list(
+    trackIdeogram, trackGenomeAxis,
+    trackData6mATipdRatio, trackSequence,
+    trackDataNuclCoverage, trackAnnotation
+  ),
+  chromosome = "scf_8254548",
+  from = 67200, to = 71400
+)
+```
+
+to do
+
+
+```{r annlocalfig2, fig.width=7, fig.height = 8, warning=FALSE, results="hide"}
+# Plotting Tracks--------
+Gviz::plotTracks(
+  trackList = list(
+    trackIdeogram, trackGenomeAxis,
+    trackData6mATipdRatio,
+    trackDataNuclCoverage, 
+    trackDataH2AXCoverage,
+    trackAnnotation
+  ),
+  chromosome = "scf_8254548",
+  from = 67200, to = 71400
+)
+```
+
+
+```{r}
+sessionInfo()
+```
