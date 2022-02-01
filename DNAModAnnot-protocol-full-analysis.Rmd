@@ -3,6 +3,7 @@ title: 'DNAModAnnot: Protocol full analysis example'
 author: "Alexis Hardy"
 date: '2022-01-01'
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 vignette: |
@@ -19,24 +20,6 @@ knitr::opts_chunk$set(
 <style>
 div.blue {  border-left: 5px solid blue; padding: 10px}
 </style>
-
-```{r, include = FALSE}
-#Change the path of the input files here
-organism_genome_path <- "/Users/alexishardy/Desktop/TOOLS/VirtualBox_VMs/ubuntu18.04_folders/DATA/T_thermophila_June2014_assembly.fasta"
-
-ModCSV_gpos_path <- "./modifications.csv.gz"
-ModGFF_gpos_path <- "./modifications.gff.gz"
-
-
-annotations_path <- "/Users/alexishardy/Desktop/TOOLS/VirtualBox_VMs/ubuntu18.04_folders/DATA/T_thermophila_June2014.gff3"
-
-expression_file_path <- "/Users/alexishardy/Desktop/TOOLS/VirtualBox_VMs/ubuntu18.04_folders/DATA/GSM692081_Growth.map.txt"
-
-MNaseSeq_path <- "/Users/alexishardy/Desktop/TOOLS/VirtualBox_VMs/ubuntu18.04_folders/DATA/GSM2534785_SB210_MNase.120_260.unique.bed"
-
-ChIPSeq_path <- "/Users/alexishardy/Desktop/TOOLS/VirtualBox_VMs/ubuntu18.04_folders/DATA/GSM2534783_WT_H2A.Z_ChIP.120_260.unique.bed"
-
-```
 
 ## Introduction  
 *DNAModAnnot* is a R package providing a comprehensive toolkit for the analysis and annotation of DNA modifications (e.g. 6-methyladenine (6mA)).  Its modular architecture allows the analysis of modification detection performed using [Pacific Biosciences (PacBio) kineticsTools](https://github.com/PacificBiosciences/kineticsTools) or Oxford Nanopore Technologies via [DeepSignal software](https://github.com/bioinfomaticsCSU/deepsignal).
@@ -554,7 +537,8 @@ expression_dataframe <- read.table(
 )
 ```
 
-You need to load the quantitative parameter to be compared with modification counts as a new column within the annotation (+counts) GRanges object.
+You need to load the quantitative parameter to be compared with modification counts as a new column within the annotation (+counts) GRanges object.  
+Here, we also normalize the counts of mapped reads using the genes size.
 
 ```{r}
 genes_range_MBcounts_param <- annot_range_MBcounts[annot_range_MBcounts$type == "gene"]
@@ -567,6 +551,11 @@ GenomicRanges::mcols(genes_range_MBcounts_param) <- merge(
   y = expression_dataframe,
   by.y = "Gene_ID"
 )
+
+genes_range_MBcounts_param$Number_of_mapped_reads_perkbp <-
+  1000*genes_range_MBcounts_param$Number_of_mapped_reads /
+  GenomicRanges::width(genes_range_MBcounts_param)
+
 ```
 
 Then, you can use the `DrawParamPerModBaseCategories` function. This will plot the distribution of the quantitative parameter provided by category of modified (and unmodified) base counts.  
@@ -574,11 +563,11 @@ Then, you can use the `DrawParamPerModBaseCategories` function. This will plot t
 ```{r, fig.width=11, fig.height = 6}
 DrawParamPerModBaseCategories(
   grangesAnnotationsWithCounts = genes_range_MBcounts_param,
-  cParamColname = "Number_of_mapped_reads",
+  cParamColname = "Number_of_mapped_reads_perkbp",
   cParamFullName = "Gene expression at G-m (mid-log exponential growth)",
-  cParamYLabel = "RNA-seq read counts (G-m)",
+  cParamYLabel = "Normalized RNA-seq read counts (G-m)",
   cSelectFeature = "gene",
-  lUseCountsPerkbp = FALSE,
+  lUseCountsPerkbp = TRUE,
   cBaseMotif = "AT",
   cModMotif = "6mAT",
   lBoxPropToCount = FALSE, lUseSameYAxis = TRUE
