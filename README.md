@@ -1,7 +1,7 @@
 # DNAModAnnot_AdditionalData
 
 ## Introduction  
-This repository contains commands and input files to run an example of 6-methyladenine pattern analysis using the DNAModAnnot package.  
+This repository contains commands and input files to run an example of 6-methyladenine pattern analysis using the DNAModAnnot package (https://github.com/AlexisHardy/DNAModAnnot).  
 To generate the full example report as html or pdf via the DNAModAnnot-protocol-full-analysis.Rmd file, please retrieve all input data and put them in the same directory.  
 Then launch the Rmd file in the same directory or modify the paths at the beginning of the Rmd file.
 
